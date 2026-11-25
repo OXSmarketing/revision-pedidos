@@ -31,7 +31,18 @@
   button { cursor: pointer; }
   :focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; }
 
-  .barra { background: var(--tinta); color: #fff; padding: 12px 14px; position: sticky; top: 0; z-index: 20; }
+  .barra { background: var(--tinta); color: #fff; padding: 12px 14px; }
+  .zona-fija { position: sticky; top: 0; z-index: 15; background: var(--fondo); margin: -12px -12px 10px; padding: 8px 12px 8px; box-shadow: 0 3px 8px rgba(0,0,0,.14); }
+  .zona-fija .doc { margin-bottom: 6px; }
+  .zona-fija .doc h1 { font-size: 22px; }
+  .zona-fija .doc .total { font-size: 28px; }
+  .zona-fija .progreso { margin-bottom: 6px; }
+  .zona-fija .revisor { margin: 0 0 6px; }
+  .zona-fija .franja-sobra { margin-bottom: 6px; padding: 6px 10px; }
+  .zona-fija .escaner { margin-bottom: 6px; padding: 6px; }
+  .zona-fija .aviso { margin-bottom: 0; min-height: 0; padding: 8px 10px; }
+  .zona-fija .aviso .t { font-size: 19px; }
+  .zona-fija .aviso .d { font-size: 13px; margin-top: 2px; }
   .barra .marca { font-family: var(--cond); font-size: 22px; letter-spacing: .5px; display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
   .barra .marca span { background: var(--rojo); padding: 0 6px; }
   .buscar { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; }
@@ -52,7 +63,7 @@
   .pedido .v { font-size: 14px; color: var(--suave); margin-top: 2px; }
   .resultado { margin-top: 12px; font-size: 15px; }
   .resultado a { color: var(--tinta); font-weight: 600; }
-  .pallets { background: var(--papel); border: 2px solid var(--tinta); border-top: 0; padding: 10px; margin: -10px 0 10px; }
+  .pallets { background: var(--papel); border: 2px solid var(--tinta); padding: 10px; margin: 0 0 10px; }
   .pallet-actual { display: grid; grid-template-columns: 56px 1fr; gap: 10px; align-items: center; }
   .miniatura { width: 56px; height: 56px; background: var(--fondo); border: 1px dashed var(--suave); display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--suave); text-align: center; overflow: hidden; }
   .miniatura img { width: 100%; height: 100%; object-fit: cover; }
@@ -97,10 +108,10 @@
   .escaner input { border: 1px solid var(--linea); padding: 12px; font-size: 18px; min-width: 0; }
   .escaner button { border: 1px solid var(--tinta); background: var(--papel); padding: 0 12px; font-weight: 600; }
   .escaner button.camara { background: var(--tinta); color: #fff; }
-  #lector { margin-top: 10px; display: none; }
+  #lector { margin-bottom: 6px; display: none; }
   #lector { position: relative; }
-  #lector video { width: 100% !important; display: block; border-radius: 4px; background: #000; }
-  #lector .guia { position: absolute; left: 50%; top: 50%; width: 62%; aspect-ratio: 1; transform: translate(-50%, -50%); border: 3px solid rgba(255,255,255,.85); border-radius: 10px; box-shadow: 0 0 0 9999px rgba(0,0,0,.25); pointer-events: none; }
+  #lector video { width: 100% !important; height: 24vh; min-height: 140px; max-height: 240px; object-fit: cover; display: block; border-radius: 4px; background: #000; }
+  #lector .guia { position: absolute; left: 50%; top: 50%; width: 72%; height: 80%; transform: translate(-50%, -50%); border: 3px solid rgba(255,255,255,.85); border-radius: 10px; box-shadow: 0 0 0 9999px rgba(0,0,0,.25); pointer-events: none; }
   #lector.on { display: block; }
 
   .aviso { padding: 14px; margin-bottom: 12px; border-left: 8px solid var(--linea); background: var(--papel); min-height: 76px; }
@@ -344,17 +355,19 @@ function clase(it) {
 
 function armar() {
   app.innerHTML = `
-    <div id="cabecera"></div>
-    <section class="escaner">
-      <div class="fila">
-        <input id="codigo" inputmode="none" autocomplete="off" placeholder="Escanea o escribe el código" aria-label="Código de barras">
-        <button type="button" id="teclado">Teclado</button>
-        <button type="button" id="btnCamara" class="camara">${videoDisponible() ? 'Cámara' : 'Foto código'}</button>
-      </div>
-      <div id="lector"></div>
-    </section>
+    <div class="zona-fija">
+      <div id="cabecera"></div>
+      <section class="escaner">
+        <div id="lector"></div>
+        <div class="fila">
+          <input id="codigo" inputmode="none" autocomplete="off" placeholder="Escanea o escribe el código" aria-label="Código de barras">
+          <button type="button" id="teclado">Teclado</button>
+          <button type="button" id="btnCamara" class="camara">${videoDisponible() ? 'Cámara' : 'Foto código'}</button>
+        </div>
+      </section>
+      <div class="aviso" id="aviso"><div class="t">Listo para escanear</div><div class="d">Acerca la etiqueta a la cámara, usa la pistola o escribe el código.</div></div>
+    </div>
     ${doc.modo === 'bodega' ? '<section class="pallets" id="pallets"></section>' : ''}
-    <div class="aviso" id="aviso"><div class="t">Listo para escanear</div><div class="d">Usa la pistola, la cámara o escribe el código y presiona Enter.</div></div>
     <input class="filtro" id="filtro" placeholder="Buscar por nombre o SKU">
     <div id="cuerpo"></div>`;
   const inp = $('#codigo');
@@ -496,7 +509,7 @@ function sumar(key, d, origen) {
   else if (n === it.cantidad) { aviso('ok', 'Completo: ' + n + ' de ' + it.cantidad, nombreCompleto(it)); sonar(true); }
   else { aviso('parcial', n + ' de ' + it.cantidad + (d < 0 ? ' (se restó una)' : ''), nombreCompleto(it) + '. Faltan ' + (it.cantidad - n) + '.'); if (d > 0) sonar(true); }
   const fila = document.getElementById('it-' + key);
-  if (fila && origen === 'scan') { fila.scrollIntoView({ block: 'center', behavior: 'smooth' }); fila.classList.add('marcado'); }
+  if (fila && origen === 'scan') fila.classList.add('marcado');
   enfocar();
 }
 
@@ -657,7 +670,7 @@ function agregarBulto(key, origen) {
   else if (n === it.cantidad) { aviso('ok', 'Completo: ' + n + ' de ' + it.cantidad + ' u.', det); sonar(true); }
   else { aviso('parcial', n + ' de ' + it.cantidad + ' u.', det + ' Faltan ' + (it.cantidad - n) + '.'); sonar(true); }
   const fila = document.getElementById('it-' + key);
-  if (fila && origen === 'scan') { fila.scrollIntoView({ block: 'center', behavior: 'smooth' }); fila.classList.add('marcado'); }
+  if (fila && origen === 'scan') fila.classList.add('marcado');
   enfocar();
 }
 
