@@ -37,12 +37,15 @@
   body.revisando .barra { display: none; }
   body.revisando main#app { position: fixed; top: 0; left: 0; right: 0; bottom: 0; padding: 0; max-width: none; display: flex; flex-direction: column; }
   body.revisando .zona-fija { position: static; margin: 0; flex: none; padding: calc(8px + env(safe-area-inset-top)) 12px 8px; }
-  body.revisando #desplazable { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 10px 12px 96px; }
+  body.revisando #desplazable { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 10px 12px 180px; }
   .zona-fija > *, #desplazable > * { max-width: 720px; margin-left: auto; margin-right: auto; }
   .zona-fija .doc .salir { border: 1px solid var(--tinta); background: var(--papel); font-size: 13px; font-weight: 600; padding: 4px 10px; margin-top: 4px; }
-  .leer { display: block; width: 100%; margin: 0 0 6px; padding: 14px; border: 0; background: var(--tinta); color: #fff; font-family: var(--cond); font-size: 22px; letter-spacing: .5px; }
-  .leer.activo { background: var(--rojo); }
-  .leer:disabled { opacity: .5; }
+  .pie .leer { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 68px; padding: 10px 16px; border: 0; border-radius: 12px; background: var(--rojo); color: #fff; font-family: var(--cond); font-size: 26px; letter-spacing: .6px; box-shadow: 0 4px 12px rgba(215,20,26,.35); touch-action: manipulation; }
+  .pie .leer svg { width: 32px; height: 32px; flex: none; }
+  .pie .leer:active { transform: scale(.98); }
+  .pie .leer.activo { background: var(--tinta); box-shadow: 0 0 0 4px var(--rojo); animation: pulso 1s infinite; }
+  @keyframes pulso { 50% { box-shadow: 0 0 0 8px rgba(215,20,26,.35); } }
+  #lector { cursor: pointer; }
   .zona-fija .doc { margin-bottom: 6px; }
   .zona-fija .doc h1 { font-size: 22px; }
   .zona-fija .doc .total { font-size: 28px; }
@@ -216,6 +219,10 @@
 </main>
 
 <footer class="pie" id="pie" hidden>
+  <button id="btnLeer" class="leer" type="button" aria-label="Leer código de barras con la cámara">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8V6a2 2 0 0 1 2-2h2M17 4h2a2 2 0 0 1 2 2v2M21 16v2a2 2 0 0 1-2 2h-2M7 20H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10 8v8M13 8v8M17 8v8"/></svg>
+    <span id="txtLeer">LEER CÓDIGO</span>
+  </button>
   <button id="deshacer" type="button">Deshacer</button>
   <button id="cerrar" class="cerrar" type="button">Cerrar revisión</button>
 </footer>
@@ -372,14 +379,13 @@ function armar() {
       <div id="cabecera"></div>
       <section class="escaner">
         <div id="lector"></div>
-        <button type="button" class="leer" id="btnLeer">LEER CÓDIGO</button>
         <div class="fila">
           <input id="codigo" inputmode="none" autocomplete="off" placeholder="Escanea o escribe el código" aria-label="Código de barras">
           <button type="button" id="teclado">Teclado</button>
           <button type="button" id="btnCamara" class="camara">${videoDisponible() ? 'Cámara' : 'Foto código'}</button>
         </div>
       </section>
-      <div class="aviso" id="aviso"><div class="t">Listo para leer</div><div class="d">Pon la etiqueta dentro del recuadro y toca LEER CÓDIGO. También puedes usar la pistola o escribir el código.</div></div>
+      <div class="aviso" id="aviso"><div class="t">Listo para leer</div><div class="d">Pon la etiqueta dentro del recuadro y toca el botón rojo LEER CÓDIGO (abajo) o la imagen de la cámara.</div></div>
     </div>
     <div id="desplazable">
       ${doc.modo === 'bodega' ? '<section class="pallets" id="pallets"></section>' : ''}
@@ -387,7 +393,7 @@ function armar() {
       <div id="cuerpo"></div>
     </div>`;
   document.body.classList.add('revisando');
-  $('#btnLeer').addEventListener('click', activarLectura);
+  $('#lector').addEventListener('click', activarLectura);
   $('.zona-fija').addEventListener('click', (e) => {
     if (e.target.closest('#btnSalir') && confirm('¿Salir de esta revisión? El avance queda guardado en este celular.')) reiniciar();
   });
@@ -992,10 +998,13 @@ let leyendo = false, timerLectura = null;
 
 function marcarLectura(activa) {
   leyendo = activa;
-  const b = $('#btnLeer'); if (b) { b.classList.toggle('activo', activa); b.textContent = activa ? 'LEYENDO…' : 'LEER CÓDIGO'; }
+  const b = $('#btnLeer'); if (b) { b.classList.toggle('activo', activa); b.setAttribute('aria-pressed', activa ? 'true' : 'false'); }
+  const tx = $('#txtLeer'); if (tx) tx.textContent = activa ? 'LEYENDO… APUNTA AL CÓDIGO' : 'LEER CÓDIGO';
   const z = $('#lector'); if (z) z.classList.toggle('leyendo', activa);
   if (!activa && timerLectura) { clearTimeout(timerLectura); timerLectura = null; }
 }
+
+$('#btnLeer').addEventListener('click', () => activarLectura());
 
 async function activarLectura() {
   if (lecturaPausada || leyendo) return;
