@@ -73,6 +73,13 @@
   .bulto .acciones button { width: 34px; height: 32px; }
   .bulto .u { font-family: var(--cond); font-size: 20px; min-width: 34px; text-align: center; display: inline-block; }
   .pallets-cerrados { margin-top: 8px; font-size: 13px; color: var(--suave); }
+  .franja-sobra { background: var(--rojo); color: #fff; padding: 10px 12px; margin-bottom: 10px; font-weight: 600; }
+  .alerta-total { position: fixed; inset: 0; z-index: 60; background: rgba(215,20,26,.96); color: #fff; display: none; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 24px; }
+  .alerta-total.on { display: flex; }
+  .alerta-total .t { font-family: var(--cond); font-size: 40px; line-height: 1; margin-bottom: 12px; }
+  .alerta-total .d { font-size: 18px; max-width: 520px; margin-bottom: 24px; }
+  .alerta-total button { background: #fff; color: var(--rojo); border: 0; padding: 16px 36px; font-weight: 700; font-size: 18px; }
+  .revisor { font-size: 13px; color: var(--suave); margin: -4px 0 10px; }
   main { padding: 12px 12px 110px; max-width: 720px; margin: 0 auto; }
   .vacio { text-align: center; color: var(--suave); padding: 48px 16px; }
   .vacio strong { display: block; color: var(--tinta); font-family: var(--cond); font-size: 26px; margin-bottom: 6px; }
@@ -194,6 +201,7 @@
 <input type="file" id="inputFoto" accept="image/*" capture="environment" hidden>
 <input type="file" id="inputCodigo" accept="image/*" capture="environment" hidden>
 <div id="lectorFoto" style="position:absolute;width:1px;height:1px;overflow:hidden;left:-9999px"></div>
+<div class="alerta-total" id="alertaTotal" role="alertdialog" aria-live="assertive"><div class="t" id="alertaT"></div><div class="d" id="alertaD"></div><button type="button" id="alertaOk">Revisado</button></div>
 <div class="modal" id="modal"><div class="hoja" id="hoja"></div></div>
 
 <script>
@@ -300,13 +308,19 @@ function abrir(r) {
   doc = r;
   const previo = leerGuardado();
   estado = previo || { cuentas: {}, extras: {}, incid: {}, historial: [] };
+  const nueva = !previo;
   if (doc.modo === 'bodega' && (!estado.pallets || !estado.pallets[0].bultos)) {
     estado = { cuentas: {}, extras: estado.extras || {}, incid: estado.incid || {}, historial: [], pallets: [{ n: 1, bultos: [], foto: null }] };
   }
   filtro = '';
+  if (!estado.inicio) estado.inicio = Date.now();
+  if (!estado.revisor) estado.revisor = nombreRevisor();
+  if (!estado.idRevision) estado.idRevision = doc.id + '_' + estado.inicio;
+  guardar();
   armar();
   pintar();
   $('#pie').hidden = false;
+  if (nueva) registrar('En revisión');
   if (previo && previo.historial.length) aviso('parcial', 'Revisión retomada', 'Se recuperó el avance que había en este celular.');
   const sinBsale = doc.items.filter(it => it.noEnBsale).length;
   if (sinBsale) aviso('parcial', sinBsale + ' SKU no están en Bsale', 'Se pueden revisar escaneando o escribiendo el SKU, pero no entrarán en la guía.');
@@ -393,7 +407,9 @@ function pintar() {
       </div>
       <div class="total">${t.revisadas}/${t.pedidas}<small>unidades</small></div>
     </section>
-    <div class="progreso"><div style="width:${pct}%"></div></div>`;
+    <div class="progreso"><div style="width:${pct}%"></div></div>
+    <div class="revisor">Revisor: ${esc(estado.revisor || '')}. Inicio: ${fechaHora(estado.inicio)}</div>
+    ${unidadesDeMas() ? `<div class="franja-sobra">Hay ${unidadesDeMas()} unidad(es) de más. Revísalas manualmente y retíralas.</div>` : ''}`;
   if (doc.modo === 'bodega') pintarPallets();
 
   $('#cuerpo').innerHTML = `
@@ -458,6 +474,7 @@ function procesar(codigo) {
     guardar(); pintar();
     aviso('error', 'No está en el ' + (doc.modo === 'bodega' ? 'pedido' : 'documento'), 'Código ' + codigo + '. Retira este producto.');
     sonar(false); enfocar();
+    alertaTotal('Producto de más', 'El código ' + codigo + ' no está en ' + doc.titulo + '. Revisa manualmente y retíralo.');
     return;
   }
   const it = coincidencias.find(x => (estado.cuentas[x.key] || 0) < x.cantidad) || coincidencias[0];
@@ -475,7 +492,7 @@ function sumar(key, d, origen) {
   estado.cuentas[key] = n;
   estado.historial.push({ t: 'item', key, d: n - antes });
   guardar(); pintar();
-  if (n > it.cantidad) { aviso('error', 'Sobra: ' + n + ' de ' + it.cantidad, nombreCompleto(it) + '. Retira ' + (n - it.cantidad) + ' unidad(es).'); sonar(false); }
+  if (n > it.cantidad) { aviso('error', 'Sobra: ' + n + ' de ' + it.cantidad, nombreCompleto(it) + '. Retira ' + (n - it.cantidad) + ' unidad(es).'); sonar(false); if (d > 0) alertaTotal('Unidades de más', nombreCompleto(it) + ': hay ' + n + ' y el documento pide ' + it.cantidad + '. Revisa manualmente y retira ' + (n - it.cantidad) + '.'); }
   else if (n === it.cantidad) { aviso('ok', 'Completo: ' + n + ' de ' + it.cantidad, nombreCompleto(it)); sonar(true); }
   else { aviso('parcial', n + ' de ' + it.cantidad + (d < 0 ? ' (se restó una)' : ''), nombreCompleto(it) + '. Faltan ' + (it.cantidad - n) + '.'); if (d > 0) sonar(true); }
   const fila = document.getElementById('it-' + key);
@@ -534,6 +551,7 @@ function textoResumen(d) {
   const t = totales();
   return [
     doc.titulo,
+    'Revisor: ' + (estado.revisor || '') + '. Inicio: ' + fechaHora(estado.inicio) + '. Término: ' + fechaHora(estado.termino || Date.now()),
     d.hay ? 'Revisión cerrada CON diferencias' : 'Revisión OK: todo cuadra',
     'Unidades revisadas: ' + t.revisadas + ' de ' + t.pedidas
   ].concat(d.faltan.map(x => 'Falta - ' + x), d.sobran.map(x => 'Sobra - ' + x),
@@ -564,6 +582,9 @@ $('#cerrar').addEventListener('click', () => {
 
 function finalizar(d) {
   detenerCamara();
+  estado.termino = Date.now();
+  guardar();
+  registrar(d.hay ? 'Con diferencias' : 'OK', d);
   const t = totales();
   const resumen = textoResumen(d);
   const esBodega = doc.modo === 'bodega';
@@ -572,6 +593,8 @@ function finalizar(d) {
     <div class="${d.hay ? 'final-dif' : 'final-ok'}">
       <h3>${d.hay ? 'Cerrada con diferencias' : 'Todo cuadra'}</h3>
       <p>${esc(doc.titulo)}. ${t.revisadas} de ${t.pedidas} unidades revisadas.</p>
+      <p>Revisor: ${esc(estado.revisor || '')}<br>Inicio: ${fechaHora(estado.inicio)}<br>Término: ${fechaHora(estado.termino)}</p>
+      <p id="estadoRegistro">Guardando en el registro…</p>
       ${esBodega ? '<p>La guía de despacho se emite con las unidades revisadas y se envía por correo.</p>' : ''}
     </div>
     <div class="resultado" id="resultado"></div>
@@ -630,7 +653,7 @@ function agregarBulto(key, origen) {
   recalcular(); guardar(); pintar();
   const n = estado.cuentas[key];
   const det = nombreCompleto(it) + '. Bulto ' + p.bultos.length + ' del pallet ' + p.n + ', ' + bulto.u + ' u.';
-  if (n > it.cantidad) { aviso('error', 'Sobra: ' + n + ' de ' + it.cantidad + ' u.', det + ' Retira ' + (n - it.cantidad) + ' unidad(es).'); sonar(false); }
+  if (n > it.cantidad) { aviso('error', 'Sobra: ' + n + ' de ' + it.cantidad + ' u.', det + ' Retira ' + (n - it.cantidad) + ' unidad(es).'); sonar(false); alertaTotal('Unidades de más', nombreCompleto(it) + ': hay ' + n + ' y el pedido pide ' + it.cantidad + '. Revisa manualmente y retira ' + (n - it.cantidad) + '.'); }
   else if (n === it.cantidad) { aviso('ok', 'Completo: ' + n + ' de ' + it.cantidad + ' u.', det); sonar(true); }
   else { aviso('parcial', n + ' de ' + it.cantidad + ' u.', det + ' Faltan ' + (it.cantidad - n) + '.'); sonar(true); }
   const fila = document.getElementById('it-' + key);
@@ -794,6 +817,68 @@ function palletsParaEnviar() {
   });
 }
 
+function fechaHora(ms) {
+  if (!ms) return '';
+  const f = new Date(ms), p = n => String(n).padStart(2, '0');
+  return p(f.getDate()) + '-' + p(f.getMonth() + 1) + '-' + f.getFullYear() + ' ' + p(f.getHours()) + ':' + p(f.getMinutes());
+}
+
+function nombreRevisor() {
+  let n = '';
+  try { n = localStorage.getItem('revisorOXS') || ''; } catch (e) {}
+  while (!n) {
+    n = (prompt('¿Quién hace la revisión? Escribe tu nombre:') || '').trim();
+  }
+  try { localStorage.setItem('revisorOXS', n); } catch (e) {}
+  return n;
+}
+
+function unidadesDeMas() {
+  if (!doc || !estado) return 0;
+  let s = 0;
+  doc.items.forEach(it => { s += Math.max(0, (estado.cuentas[it.key] || 0) - it.cantidad); });
+  Object.keys(estado.extras).forEach(c => { s += estado.extras[c] || 0; });
+  return s;
+}
+
+let lecturaPausada = false;
+function alertaTotal(titulo, detalle) {
+  lecturaPausada = true;
+  $('#alertaT').textContent = titulo;
+  $('#alertaD').textContent = detalle;
+  $('#alertaTotal').classList.add('on');
+  if (navigator.vibrate) navigator.vibrate([300, 120, 300, 120, 300]);
+}
+$('#alertaOk').addEventListener('click', () => {
+  $('#alertaTotal').classList.remove('on');
+  setTimeout(() => { lecturaPausada = false; }, 800);
+  enfocar();
+});
+
+function registrar(estadoTexto, d) {
+  if (!doc || !estado) return;
+  d = d || diferencias();
+  const t = totales();
+  const sobran = unidadesDeMas();
+  const detalle = [].concat(
+    d.faltan.map(x => 'Falta - ' + x), d.sobran.map(x => 'Sobra - ' + x),
+    d.fuera.map(x => 'Fuera - ' + x), d.incid.map(x => 'Incidencia - ' + x),
+    (d.sinFoto || []).map(x => 'Pallet - ' + x)).join('\n');
+  const datos = {
+    id: estado.idRevision, modo: doc.modo === 'bodega' ? 'Bodega' : 'Pedido cliente',
+    documento: doc.titulo, cliente: (doc.subtitulo || '').split('\n')[0], revisor: estado.revisor,
+    inicio: estado.inicio, termino: estadoTexto === 'En revisión' ? null : estado.termino,
+    estado: estadoTexto, pedidas: t.pedidas, revisadas: t.revisadas,
+    faltantes: doc.items.reduce((s, it) => s + Math.max(0, it.cantidad - (estado.cuentas[it.key] || 0)), 0),
+    sobrantes: sobran, fuera: Object.keys(estado.extras).reduce((s, c) => s + (estado.extras[c] || 0), 0),
+    incidencias: Object.keys(estado.incid).length, detalle: detalle
+  };
+  google.script.run
+    .withSuccessHandler(() => { const e = $('#estadoRegistro'); if (e) e.textContent = 'Guardado en el registro de revisiones.'; })
+    .withFailureHandler((err) => { const e = $('#estadoRegistro'); if (e) e.innerHTML = '<span class="sin">No se pudo guardar en el registro: ' + esc(err.message || String(err)) + '</span>'; })
+    .registrarRevision(datos);
+}
+
 function abrirModal(html) { $('#hoja').innerHTML = html; $('#modal').classList.add('on'); }
 function cerrarModal() { $('#modal').classList.remove('on'); }
 
@@ -869,6 +954,7 @@ let lectorStream = null, lectorTimer = null, zxReader = null;
 
 /* La misma etiqueta frente a la cámara cuenta una sola vez: para sumar otra unidad hay que retirarla 1,5 s. */
 function onCodigoCamara(texto) {
+  if (lecturaPausada || $('#modal').classList.contains('on')) return;
   const ahora = Date.now();
   if (texto === ultimoCodigo && ahora - ultimoTiempo < 1500) { ultimoTiempo = ahora; return; }
   ultimoCodigo = texto; ultimoTiempo = ahora;
@@ -895,20 +981,49 @@ async function iniciarCamara() {
       const det = new BarcodeDetector({ formats: FORMATOS_NATIVOS });
       let ocupado = false;
       lectorTimer = setInterval(async () => {
-        if (ocupado || video.readyState < 2) return;
+        if (ocupado || video.readyState < 2 || lecturaPausada) return;
         ocupado = true;
         try { const r = await det.detect(video); if (r.length) onCodigoCamara(r[0].rawValue); } catch (e) {}
         ocupado = false;
-      }, 150);
+      }, 100);
     } else {
-      // iPhone: ZXing con TRY_HARDER prueba el código horizontal y girado en 90 grados.
+      // iPhone: analiza el centro de cada cuadro rotado en 0, ±20 y ±40 grados; TRY_HARDER suma el giro de 90,
+      // así cubre cualquier ángulo de la etiqueta (probado de 0 a 355 grados).
       if (!window.ZXing) throw new Error('lector no disponible');
       const Z = ZXing;
       const hints = new Map();
       hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E, Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.CODE_39, Z.BarcodeFormat.ITF]);
       hints.set(Z.DecodeHintType.TRY_HARDER, true);
-      zxReader = new Z.BrowserMultiFormatReader(hints, 120);
-      await zxReader.decodeFromConstraints(restricciones, video, (res) => { if (res) onCodigoCamara(res.getText()); });
+      const lectorZ = new Z.MultiFormatReader();
+      lectorZ.setHints(hints);
+      lectorStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } });
+      try { const pista = lectorStream.getVideoTracks()[0]; const cap = pista.getCapabilities ? pista.getCapabilities() : {}; if (cap.focusMode && cap.focusMode.indexOf('continuous') !== -1) await pista.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) {}
+      video.srcObject = lectorStream;
+      await video.play();
+      const lienzo = document.createElement('canvas');
+      const ctx = lienzo.getContext('2d', { willReadFrequently: true });
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      const angulos = [0, 20, -20, 40, -40];
+      let k = 0;
+      lectorTimer = setInterval(() => {
+        if (video.readyState < 2 || lecturaPausada) return;
+        const vw = video.videoWidth, vh = video.videoHeight;
+        if (!vw || !vh) return;
+        const lado = Math.min(vw, vh) * 0.85, sx = (vw - lado) / 2, sy = (vh - lado) / 2, S = 900;
+        lienzo.width = S; lienzo.height = S;
+        const ang = angulos[k++ % angulos.length] * Math.PI / 180;
+        ctx.save();
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, S, S);
+        ctx.translate(S / 2, S / 2); ctx.rotate(ang);
+        ctx.drawImage(video, sx, sy, lado, lado, -S / 2, -S / 2, S, S);
+        ctx.restore();
+        try {
+          const bmp = new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(lienzo)));
+          const res = lectorZ.decode(bmp);
+          if (res) onCodigoCamara(res.getText());
+        } catch (e) {}
+      }, 80);
     }
     const b = $('#btnCamara'); if (b) b.textContent = 'Detener';
   } catch (err) {
