@@ -216,6 +216,18 @@
   body.revisando .pie .leer { order: 2; grid-column: auto; min-height: 52px; font-size: 20px; gap: 8px; padding: 6px 10px; border-radius: 10px; }
   body.revisando .pie .leer svg { width: 24px; height: 24px; }
   body.revisando .pie .cerrar { order: 3; font-size: 15px; }
+  body.revisando #desplazable { position: relative; }
+  .item.ultimo { outline: 3px solid var(--tinta); outline-offset: -3px; }
+  .item.marcado { animation: marcado 1.6s; }
+  body.revisando .zona-fija .aviso .d { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  body.revisando .zona-fija .aviso .d.codigo { -webkit-line-clamp: 1; font-weight: 600; color: var(--tinta); }
+  .manual { position: fixed; top: 0; left: 0; right: 0; z-index: 70; background: var(--papel); padding: calc(12px + env(safe-area-inset-top)) 12px 12px; box-shadow: 0 6px 18px rgba(0,0,0,.25); display: none; }
+  .manual.on { display: block; }
+  .manual form { display: grid; grid-template-columns: 1fr auto; gap: 8px; max-width: 720px; margin: 0 auto; }
+  .manual label { grid-column: 1 / -1; font-weight: 600; }
+  .manual input { padding: 12px; font-size: 18px; border: 2px solid var(--tinta); min-width: 0; }
+  .manual .agregar { background: var(--rojo); color: #fff; border: 0; padding: 0 18px; font-weight: 700; font-size: 16px; }
+  .manual .cancelar { grid-column: 1 / -1; background: var(--papel); border: 1px solid var(--linea); padding: 10px; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -259,6 +271,14 @@
 <input type="file" id="inputFoto" accept="image/*" capture="environment" hidden>
 <input type="file" id="inputCodigo" accept="image/*" capture="environment" hidden>
 <div id="lectorFoto" style="position:absolute;width:1px;height:1px;overflow:hidden;left:-9999px"></div>
+<div class="manual" id="manual" role="dialog" aria-label="Ingresar código manual">
+  <form id="formManual" autocomplete="off">
+    <label for="inManual">Código de barras o SKU</label>
+    <input id="inManual" type="text" inputmode="text" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="done">
+    <button class="agregar" type="submit">Agregar</button>
+    <button class="cancelar" type="button" id="cancelarManual">Cancelar</button>
+  </form>
+</div>
 <div class="alerta-total" id="alertaTotal" role="alertdialog" aria-live="assertive"><div class="t" id="alertaT"></div><div class="d" id="alertaD"></div><button type="button" id="alertaOk">Revisado</button></div>
 <div class="modal" id="modal"><div class="hoja" id="hoja"></div></div>
 
@@ -430,10 +450,7 @@ function armar() {
   inp.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); procesar(inp.value); inp.value = ''; }
   });
-  $('#teclado').addEventListener('click', () => {
-    inp.setAttribute('inputmode', inp.getAttribute('inputmode') === 'none' ? 'text' : 'none');
-    inp.blur(); inp.focus();
-  });
+  $('#teclado').addEventListener('click', abrirManual);
   $('#btnCamara').addEventListener('click', alternarCamara);
   if (doc.modo === 'bodega') {
     $('#pallets').addEventListener('click', (e) => {
@@ -506,7 +523,7 @@ function filaItem(it) {
   const codigo = it.noEnBsale ? '<span class="sin">SKU no encontrado en Bsale</span>'
     : it.barcode ? 'Código ' + esc(it.barcode) : '<span class="sin">Sin código de barras en Bsale</span>';
   return `
-    <div class="item ${clase(it)}" id="it-${esc(it.key)}">
+    <div class="item ${clase(it)}${it.key === ultimoKey ? ' ultimo' : ''}" id="it-${esc(it.key)}">
       <div class="estado"></div>
       <div class="info">
         <div class="n">${esc(it.nombre)}</div>
@@ -527,8 +544,44 @@ function filaItem(it) {
 }
 
 function enfocar() {
+  if ($('#manual').classList.contains('on')) return;
   const inp = $('#codigo');
   if (inp && document.activeElement !== $('#filtro')) inp.focus({ preventScroll: true });
+}
+
+function abrirManual() {
+  detenerLecturaSiActiva();
+  $('#inManual').value = '';
+  $('#manual').classList.add('on');
+  setTimeout(() => $('#inManual').focus(), 50);
+}
+function cerrarManual() {
+  $('#manual').classList.remove('on');
+  $('#inManual').blur();
+}
+function detenerLecturaSiActiva() { if (typeof marcarLectura === 'function' && leyendo) marcarLectura(false); }
+$('#formManual').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const v = $('#inManual').value.trim();
+  cerrarManual();
+  if (v) procesar(v);
+});
+$('#cancelarManual').addEventListener('click', () => { cerrarManual(); enfocar(); });
+
+let ultimoKey = null;
+function mostrarItem(key) {
+  ultimoKey = key;
+  document.querySelectorAll('.item.ultimo').forEach(x => x.classList.remove('ultimo'));
+  const fila = document.getElementById('it-' + key);
+  if (!fila) return;
+  fila.classList.add('ultimo', 'marcado');
+  const cont = $('#desplazable');
+  if (cont && document.body.classList.contains('revisando')) {
+    cont.scrollTo({ top: Math.max(0, fila.offsetTop - 8), behavior: 'smooth' });
+  }
+  const it = doc.items.find(x => x.key === key);
+  const a = $('#aviso');
+  if (it && a) a.insertAdjacentHTML('beforeend', '<div class="d codigo">SKU ' + esc(it.sku || '—') + (it.barcode ? ' · Código ' + esc(it.barcode) : '') + '</div>');
 }
 
 function procesar(codigo) {
@@ -566,7 +619,7 @@ function sumar(key, d, origen) {
   else if (n === it.cantidad) { aviso('ok', 'Completo: ' + n + ' de ' + it.cantidad, nombreCompleto(it)); sonar(true); }
   else { aviso('parcial', n + ' de ' + it.cantidad + (d < 0 ? ' (se restó una)' : ''), nombreCompleto(it) + '. Faltan ' + (it.cantidad - n) + '.'); if (d > 0) sonar(true); }
   const fila = document.getElementById('it-' + key);
-  if (fila && origen === 'scan') fila.classList.add('marcado');
+  if (origen === 'scan') mostrarItem(key);
   enfocar();
 }
 
@@ -727,7 +780,7 @@ function agregarBulto(key, origen) {
   else if (n === it.cantidad) { aviso('ok', 'Completo: ' + n + ' de ' + it.cantidad + ' u.', det); sonar(true); }
   else { aviso('parcial', n + ' de ' + it.cantidad + ' u.', det + ' Faltan ' + (it.cantidad - n) + '.'); sonar(true); }
   const fila = document.getElementById('it-' + key);
-  if (fila && origen === 'scan') fila.classList.add('marcado');
+  if (origen === 'scan') mostrarItem(key);
   enfocar();
 }
 
@@ -1169,7 +1222,7 @@ function pantallaClave(msg) {
 if (!claveApp()) pantallaClave(); else pedirPermisoCamara();
 
 document.addEventListener('click', (e) => {
-  if (!doc || $('#modal').classList.contains('on')) return;
+  if (!doc || $('#modal').classList.contains('on') || $('#manual').classList.contains('on')) return;
   if (e.target.closest('input, .tipo, .modos, #formBuscar, #barraBodega, #pallets, #formClave')) return;
   setTimeout(enfocar, 0);
 });
