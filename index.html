@@ -33,6 +33,16 @@
 
   .barra { background: var(--tinta); color: #fff; padding: 12px 14px; }
   .zona-fija { position: sticky; top: 0; z-index: 15; background: var(--fondo); margin: -12px -12px 10px; padding: 8px 12px 8px; box-shadow: 0 3px 8px rgba(0,0,0,.14); }
+  body.revisando { overflow: hidden; }
+  body.revisando .barra { display: none; }
+  body.revisando main#app { position: fixed; top: 0; left: 0; right: 0; bottom: 0; padding: 0; max-width: none; display: flex; flex-direction: column; }
+  body.revisando .zona-fija { position: static; margin: 0; flex: none; padding: calc(8px + env(safe-area-inset-top)) 12px 8px; }
+  body.revisando #desplazable { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 10px 12px 96px; }
+  .zona-fija > *, #desplazable > * { max-width: 720px; margin-left: auto; margin-right: auto; }
+  .zona-fija .doc .salir { border: 1px solid var(--tinta); background: var(--papel); font-size: 13px; font-weight: 600; padding: 4px 10px; margin-top: 4px; }
+  .leer { display: block; width: 100%; margin: 0 0 6px; padding: 14px; border: 0; background: var(--tinta); color: #fff; font-family: var(--cond); font-size: 22px; letter-spacing: .5px; }
+  .leer.activo { background: var(--rojo); }
+  .leer:disabled { opacity: .5; }
   .zona-fija .doc { margin-bottom: 6px; }
   .zona-fija .doc h1 { font-size: 22px; }
   .zona-fija .doc .total { font-size: 28px; }
@@ -109,9 +119,10 @@
   .escaner button { border: 1px solid var(--tinta); background: var(--papel); padding: 0 12px; font-weight: 600; }
   .escaner button.camara { background: var(--tinta); color: #fff; }
   #lector { margin-bottom: 6px; display: none; }
+  #lector.leyendo .guia { border-color: var(--rojo); border-width: 4px; }
   #lector { position: relative; }
-  #lector video { width: 100% !important; height: 24vh; min-height: 140px; max-height: 240px; object-fit: cover; display: block; border-radius: 4px; background: #000; }
-  #lector .guia { position: absolute; left: 50%; top: 50%; width: 72%; height: 80%; transform: translate(-50%, -50%); border: 3px solid rgba(255,255,255,.85); border-radius: 10px; box-shadow: 0 0 0 9999px rgba(0,0,0,.25); pointer-events: none; }
+  #lector video { width: 100% !important; height: 26vh; min-height: 140px; max-height: 230px; object-fit: cover; display: block; border-radius: 4px; background: #000; }
+  #lector .guia { position: absolute; left: 50%; top: 50%; width: 72%; height: 80%; transform: translate(-50%, -50%); border: 3px solid rgba(255,255,255,.85); transition: border-color .15s; border-radius: 10px; box-shadow: 0 0 0 9999px rgba(0,0,0,.25); pointer-events: none; }
   #lector.on { display: block; }
 
   .aviso { padding: 14px; margin-bottom: 12px; border-left: 8px solid var(--linea); background: var(--papel); min-height: 76px; }
@@ -295,6 +306,7 @@ $('#verPedidos').addEventListener('click', () => {
 });
 
 function cargando(t, d) {
+  document.body.classList.remove('revisando');
   detenerCamara();
   $('#pie').hidden = true;
   app.innerHTML = '<div class="vacio"><strong>' + esc(t) + '</strong>' + esc(d) + '</div>';
@@ -304,6 +316,7 @@ function fallo(err) {
   app.innerHTML = '<div class="vacio"><strong>No se pudo cargar</strong>' + esc(err.message || String(err)) + '</div>';
 }
 function reiniciar() {
+  document.body.classList.remove('revisando');
   detenerCamara();
   doc = null; estado = null; filtro = '';
   $('#pie').hidden = true;
@@ -359,17 +372,25 @@ function armar() {
       <div id="cabecera"></div>
       <section class="escaner">
         <div id="lector"></div>
+        <button type="button" class="leer" id="btnLeer">LEER CÓDIGO</button>
         <div class="fila">
           <input id="codigo" inputmode="none" autocomplete="off" placeholder="Escanea o escribe el código" aria-label="Código de barras">
           <button type="button" id="teclado">Teclado</button>
           <button type="button" id="btnCamara" class="camara">${videoDisponible() ? 'Cámara' : 'Foto código'}</button>
         </div>
       </section>
-      <div class="aviso" id="aviso"><div class="t">Listo para escanear</div><div class="d">Acerca la etiqueta a la cámara, usa la pistola o escribe el código.</div></div>
+      <div class="aviso" id="aviso"><div class="t">Listo para leer</div><div class="d">Pon la etiqueta dentro del recuadro y toca LEER CÓDIGO. También puedes usar la pistola o escribir el código.</div></div>
     </div>
-    ${doc.modo === 'bodega' ? '<section class="pallets" id="pallets"></section>' : ''}
-    <input class="filtro" id="filtro" placeholder="Buscar por nombre o SKU">
-    <div id="cuerpo"></div>`;
+    <div id="desplazable">
+      ${doc.modo === 'bodega' ? '<section class="pallets" id="pallets"></section>' : ''}
+      <input class="filtro" id="filtro" placeholder="Buscar por nombre o SKU">
+      <div id="cuerpo"></div>
+    </div>`;
+  document.body.classList.add('revisando');
+  $('#btnLeer').addEventListener('click', activarLectura);
+  $('.zona-fija').addEventListener('click', (e) => {
+    if (e.target.closest('#btnSalir') && confirm('¿Salir de esta revisión? El avance queda guardado en este celular.')) reiniciar();
+  });
   const inp = $('#codigo');
   inp.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); procesar(inp.value); inp.value = ''; }
@@ -417,6 +438,7 @@ function pintar() {
       <div>
         <h1>${esc(doc.titulo)}</h1>
         <p>${esc(doc.subtitulo || '').replace(/\n/g, '<br>')}</p>
+        <button type="button" class="salir" id="btnSalir">Salir</button>
       </div>
       <div class="total">${t.revisadas}/${t.pedidas}<small>unidades</small></div>
     </section>
@@ -622,7 +644,7 @@ function finalizar(d) {
       .then(() => { $('#copiar').textContent = 'Resumen copiado'; })
       .catch(() => { prompt('Copia el resumen:', resumen); });
   };
-  $('#nueva').onclick = () => { borrarGuardado(); cerrarModal(); reiniciar(); };
+  $('#nueva').onclick = () => { borrarGuardado(); cerrarModal(); reiniciar(); window.scrollTo(0, 0); };
 
   if (esBodega) {
     $('#emitir').onclick = () => {
@@ -965,12 +987,31 @@ $('#inputCodigo').addEventListener('change', async (e) => {
 
 let lectorStream = null, lectorTimer = null, zxReader = null;
 
-/* La misma etiqueta frente a la cámara cuenta una sola vez: para sumar otra unidad hay que retirarla 1,5 s. */
+/* La cámara solo lee cuando se toca LEER CÓDIGO: toma el primer código que vea en 3 segundos y se detiene. */
+let leyendo = false, timerLectura = null;
+
+function marcarLectura(activa) {
+  leyendo = activa;
+  const b = $('#btnLeer'); if (b) { b.classList.toggle('activo', activa); b.textContent = activa ? 'LEYENDO…' : 'LEER CÓDIGO'; }
+  const z = $('#lector'); if (z) z.classList.toggle('leyendo', activa);
+  if (!activa && timerLectura) { clearTimeout(timerLectura); timerLectura = null; }
+}
+
+async function activarLectura() {
+  if (lecturaPausada || leyendo) return;
+  if (!videoDisponible()) { $('#inputCodigo').value = ''; $('#inputCodigo').click(); return; }
+  if (!lector) await iniciarCamara();
+  if (!lector) return;
+  marcarLectura(true);
+  timerLectura = setTimeout(() => {
+    marcarLectura(false);
+    aviso('parcial', 'No se detectó un código', 'Acerca la etiqueta al recuadro, evita reflejos y vuelve a tocar LEER CÓDIGO.');
+  }, 3000);
+}
+
 function onCodigoCamara(texto) {
-  if (lecturaPausada || $('#modal').classList.contains('on')) return;
-  const ahora = Date.now();
-  if (texto === ultimoCodigo && ahora - ultimoTiempo < 1500) { ultimoTiempo = ahora; return; }
-  ultimoCodigo = texto; ultimoTiempo = ahora;
+  if (!leyendo || lecturaPausada || $('#modal').classList.contains('on')) return;
+  marcarLectura(false);
   procesar(texto);
 }
 
@@ -994,7 +1035,7 @@ async function iniciarCamara() {
       const det = new BarcodeDetector({ formats: FORMATOS_NATIVOS });
       let ocupado = false;
       lectorTimer = setInterval(async () => {
-        if (ocupado || video.readyState < 2 || lecturaPausada) return;
+        if (!leyendo || ocupado || video.readyState < 2 || lecturaPausada) return;
         ocupado = true;
         try { const r = await det.detect(video); if (r.length) onCodigoCamara(r[0].rawValue); } catch (e) {}
         ocupado = false;
@@ -1020,7 +1061,7 @@ async function iniciarCamara() {
       const angulos = [0, 20, -20, 40, -40];
       let k = 0;
       lectorTimer = setInterval(() => {
-        if (video.readyState < 2 || lecturaPausada) return;
+        if (!leyendo || video.readyState < 2 || lecturaPausada) return;
         const vw = video.videoWidth, vh = video.videoHeight;
         if (!vw || !vh) return;
         const lado = Math.min(vw, vh) * 0.85, sx = (vw - lado) / 2, sy = (vh - lado) / 2, S = 900;
@@ -1046,6 +1087,7 @@ async function iniciarCamara() {
 }
 
 function detenerCamara() {
+  if (typeof marcarLectura === 'function') marcarLectura(false);
   if (!lector) return;
   lector = null;
   if (lectorTimer) { clearInterval(lectorTimer); lectorTimer = null; }
