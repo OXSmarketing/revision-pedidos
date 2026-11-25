@@ -187,6 +187,35 @@
 
   .cargando { opacity: .5; pointer-events: none; }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+  /* Modo revisión compacto: panel superior bajo y lista con el máximo espacio */
+  body.revisando .zona-fija { padding: calc(6px + env(safe-area-inset-top)) 10px 6px; }
+  body.revisando .zona-fija .doc { align-items: center; margin-bottom: 4px; }
+  body.revisando .zona-fija .doc > div:first-child { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+  body.revisando .zona-fija .doc h1 { font-size: 20px; }
+  body.revisando .zona-fija .doc p { display: none; }
+  body.revisando .zona-fija .doc .salir { margin: 0; padding: 2px 8px; font-size: 12px; }
+  body.revisando .zona-fija .doc .total { font-size: 22px; }
+  body.revisando .zona-fija .doc .total small { display: inline; font-size: 11px; margin-left: 3px; }
+  body.revisando .zona-fija .progreso { height: 5px; margin-bottom: 4px; }
+  body.revisando .zona-fija .revisor { font-size: 12px; margin: 0 0 4px; }
+  body.revisando .zona-fija .franja-sobra { font-size: 13px; padding: 4px 8px; margin-bottom: 4px; }
+  body.revisando .zona-fija .escaner { padding: 4px; margin-bottom: 4px; border-width: 1px; }
+  body.revisando #lector { margin-bottom: 4px; }
+  body.revisando #lector video { height: 13vh; min-height: 84px; max-height: 120px; }
+  body.revisando #lector .guia { width: 80%; height: 72%; border-width: 2px; box-shadow: 0 0 0 9999px rgba(0,0,0,.18); }
+  body.revisando .escaner .fila { gap: 6px; }
+  body.revisando .escaner input { padding: 7px 8px; font-size: 15px; }
+  body.revisando .escaner button { padding: 0 10px; font-size: 14px; }
+  body.revisando .zona-fija .aviso { padding: 5px 8px; border-left-width: 6px; }
+  body.revisando .zona-fija .aviso .t { font-size: 16px; }
+  body.revisando .zona-fija .aviso .d { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  body.revisando #desplazable { padding: 8px 10px 84px; }
+  body.revisando .pie { grid-template-columns: 1fr 2.2fr 1fr; gap: 6px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); align-items: stretch; }
+  body.revisando .pie button { padding: 8px 6px; font-size: 14px; min-height: 52px; }
+  body.revisando .pie #deshacer { order: 1; }
+  body.revisando .pie .leer { order: 2; grid-column: auto; min-height: 52px; font-size: 20px; gap: 8px; padding: 6px 10px; border-radius: 10px; }
+  body.revisando .pie .leer svg { width: 24px; height: 24px; }
+  body.revisando .pie .cerrar { order: 3; font-size: 15px; }
 </style>
 </head>
 <body>
@@ -224,7 +253,7 @@
     <span id="txtLeer">LEER CÓDIGO</span>
   </button>
   <button id="deshacer" type="button">Deshacer</button>
-  <button id="cerrar" class="cerrar" type="button">Cerrar revisión</button>
+  <button id="cerrar" class="cerrar" type="button">Cerrar</button>
 </footer>
 
 <input type="file" id="inputFoto" accept="image/*" capture="environment" hidden>
@@ -999,7 +1028,7 @@ let leyendo = false, timerLectura = null;
 function marcarLectura(activa) {
   leyendo = activa;
   const b = $('#btnLeer'); if (b) { b.classList.toggle('activo', activa); b.setAttribute('aria-pressed', activa ? 'true' : 'false'); }
-  const tx = $('#txtLeer'); if (tx) tx.textContent = activa ? 'LEYENDO… APUNTA AL CÓDIGO' : 'LEER CÓDIGO';
+  const tx = $('#txtLeer'); if (tx) tx.textContent = activa ? 'LEYENDO…' : 'LEER CÓDIGO';
   const z = $('#lector'); if (z) z.classList.toggle('leyendo', activa);
   if (!activa && timerLectura) { clearTimeout(timerLectura); timerLectura = null; }
 }
