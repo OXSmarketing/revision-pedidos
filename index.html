@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <style>
   :root {
     --papel: #ffffff;
@@ -90,7 +91,9 @@
   .escaner button { border: 1px solid var(--tinta); background: var(--papel); padding: 0 12px; font-weight: 600; }
   .escaner button.camara { background: var(--tinta); color: #fff; }
   #lector { margin-top: 10px; display: none; }
-  #lector video { width: 100% !important; border-radius: 4px; }
+  #lector { position: relative; }
+  #lector video { width: 100% !important; display: block; border-radius: 4px; background: #000; }
+  #lector .guia { position: absolute; left: 50%; top: 50%; width: 62%; aspect-ratio: 1; transform: translate(-50%, -50%); border: 3px solid rgba(255,255,255,.85); border-radius: 10px; box-shadow: 0 0 0 9999px rgba(0,0,0,.25); pointer-events: none; }
   #lector.on { display: block; }
 
   .aviso { padding: 14px; margin-bottom: 12px; border-left: 8px solid var(--linea); background: var(--papel); min-height: 76px; }
@@ -862,34 +865,66 @@ $('#inputCodigo').addEventListener('change', async (e) => {
   else { aviso('error', 'No se pudo leer el código', 'Saca la foto más cerca, con el código derecho, nítido y sin reflejo, y vuelve a intentar.'); sonar(false); enfocar(); }
 });
 
-function iniciarCamara() {
-  if (!window.Html5Qrcode) { aviso('error', 'No se pudo cargar el lector de cámara', 'Usa la pistola o escribe el código.'); return; }
-  $('#lector').classList.add('on');
-  const F = Html5QrcodeSupportedFormats;
-  lector = new Html5Qrcode('lector', { formatsToSupport: [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39, F.ITF], verbose: false, experimentalFeatures: { useBarCodeDetectorIfSupported: true } });
-  lector.start({ facingMode: 'environment' }, {
-    fps: 12,
-    qrbox: (w, h) => ({ width: Math.round(Math.min(w * 0.9, 380)), height: Math.round(Math.min(h * 0.45, 170)) })
-  }, (texto) => {
-    // La misma etiqueta frente a la cámara cuenta una sola vez: para sumar otra unidad hay que retirarla 1,5 s.
-    const ahora = Date.now();
-    if (texto === ultimoCodigo && ahora - ultimoTiempo < 1500) { ultimoTiempo = ahora; return; }
-    ultimoCodigo = texto; ultimoTiempo = ahora;
-    procesar(texto);
-  }, () => {}).then(() => { $('#btnCamara').textContent = 'Detener'; })
-  .catch((err) => {
-    lector = null;
-    $('#lector').classList.remove('on');
-    aviso('error', 'La cámara no está disponible aquí', 'El navegador no dio permiso de cámara en esta página. Usa la pistola o escribe el código. (' + (err && err.name || err) + ')');
-  });
+let lectorStream = null, lectorTimer = null, zxReader = null;
+
+/* La misma etiqueta frente a la cámara cuenta una sola vez: para sumar otra unidad hay que retirarla 1,5 s. */
+function onCodigoCamara(texto) {
+  const ahora = Date.now();
+  if (texto === ultimoCodigo && ahora - ultimoTiempo < 1500) { ultimoTiempo = ahora; return; }
+  ultimoCodigo = texto; ultimoTiempo = ahora;
+  procesar(texto);
+}
+
+async function iniciarCamara() {
+  const z = $('#lector'); if (!z) return;
+  z.classList.add('on');
+  z.innerHTML = '<video id="video" playsinline muted autoplay></video><div class="guia"></div>';
+  const video = $('#video');
+  lector = true;
+  const restricciones = { video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } };
+  try {
+    let nativo = false;
+    if ('BarcodeDetector' in window) {
+      try { nativo = (await BarcodeDetector.getSupportedFormats()).indexOf('ean_13') !== -1; } catch (e) {}
+    }
+    if (nativo) {
+      // Detector del sistema (Chrome Android): lee en cualquier ángulo.
+      lectorStream = await navigator.mediaDevices.getUserMedia(restricciones);
+      video.srcObject = lectorStream;
+      await video.play();
+      const det = new BarcodeDetector({ formats: FORMATOS_NATIVOS });
+      let ocupado = false;
+      lectorTimer = setInterval(async () => {
+        if (ocupado || video.readyState < 2) return;
+        ocupado = true;
+        try { const r = await det.detect(video); if (r.length) onCodigoCamara(r[0].rawValue); } catch (e) {}
+        ocupado = false;
+      }, 150);
+    } else {
+      // iPhone: ZXing con TRY_HARDER prueba el código horizontal y girado en 90 grados.
+      if (!window.ZXing) throw new Error('lector no disponible');
+      const Z = ZXing;
+      const hints = new Map();
+      hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E, Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.CODE_39, Z.BarcodeFormat.ITF]);
+      hints.set(Z.DecodeHintType.TRY_HARDER, true);
+      zxReader = new Z.BrowserMultiFormatReader(hints, 120);
+      await zxReader.decodeFromConstraints(restricciones, video, (res) => { if (res) onCodigoCamara(res.getText()); });
+    }
+    const b = $('#btnCamara'); if (b) b.textContent = 'Detener';
+  } catch (err) {
+    detenerCamara();
+    aviso('error', 'La cámara no está disponible', 'Revisa el permiso de cámara del navegador. Mientras, usa la pistola o escribe el código. (' + (err && err.name || err) + ')');
+  }
 }
 
 function detenerCamara() {
   if (!lector) return;
-  const l = lector; lector = null;
-  l.stop().catch(() => {}).finally(() => { try { l.clear(); } catch (e) {} });
+  lector = null;
+  if (lectorTimer) { clearInterval(lectorTimer); lectorTimer = null; }
+  if (zxReader) { try { zxReader.reset(); } catch (e) {} zxReader = null; }
+  if (lectorStream) { lectorStream.getTracks().forEach(t => t.stop()); lectorStream = null; }
+  const z = $('#lector'); if (z) { z.classList.remove('on'); z.innerHTML = ''; }
   const b = $('#btnCamara'); if (b) b.textContent = 'Cámara';
-  const z = $('#lector'); if (z) z.classList.remove('on');
 }
 
 function esc(s) {
